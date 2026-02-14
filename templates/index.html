@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KubeBlueprint</title>
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="header-logo">
+    <div class="logo-mark">K8</div>
+    <div class="logo-info">
+      <div class="logo-name">KubeBlueprint</div>
+      <div class="logo-tagline">Kubernetes · Helm · Kustomize</div>
+    </div>
+  </div>
+  <div class="header-badges">
+    <span class="hbadge green">● K8s 1.35+</span>
+    <span class="hbadge">CIS Hardened</span>
+    <span class="hbadge">PSS Restricted</span>
+  </div>
+</header>
+
+<div class="app-body">
+
+  <!-- ══════════════════ LEFT SIDEBAR ══════════════════ -->
+  <aside class="sidebar" id="sidebar">
+
+    <!-- Package Type -->
+    <div class="section">
+      <div class="section-label">Package Type</div>
+      <div class="mode-row">
+        <button class="mode-card active" id="btn-helm" data-mode="helm" onclick="setMode('helm')">
+          <span class="mode-icon">⎈</span>
+          <span class="mode-name">Helm</span>
+          <span class="mode-sub">Chart + values</span>
+        </button>
+        <button class="mode-card" id="btn-kustomize" data-mode="kustomize" onclick="setMode('kustomize')">
+          <span class="mode-icon">⎎</span>
+          <span class="mode-name">Kustomize</span>
+          <span class="mode-sub">Base + overlays</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- App Details -->
+    <div class="section">
+      <div class="section-label">Application</div>
+      <div class="field">
+        <label class="field-label">App / Chart Name</label>
+        <input class="input" id="app-name" type="text" placeholder="my-app" value="my-app">
+      </div>
+      <div class="field">
+        <label class="field-label">Container Image</label>
+        <input class="input" id="image" type="text" placeholder="nginx:1.25-alpine" value="nginx:1.25-alpine">
+      </div>
+      <div class="field">
+        <label class="field-label">Container Port</label>
+        <input class="input" id="port" type="text" placeholder="8080" value="8080">
+      </div>
+    </div>
+
+    <!-- Resources -->
+    <div class="section">
+      <div class="section-label">Manifest Resources</div>
+      <div class="chips">
+        <label class="chip"><input type="checkbox" value="deployment" checked disabled><span class="chip-inner">🚀 Deployment</span></label>
+        <label class="chip"><input type="checkbox" value="service" checked><span class="chip-inner">🔗 Service</span></label>
+        <label class="chip"><input type="checkbox" value="ingress"><span class="chip-inner">🌐 Ingress</span></label>
+        <label class="chip"><input type="checkbox" value="configmap" checked><span class="chip-inner">⚙️ ConfigMap</span></label>
+        <label class="chip"><input type="checkbox" value="serviceaccount" checked><span class="chip-inner">🔑 ServiceAccount</span></label>
+        <label class="chip"><input type="checkbox" value="hpa" checked><span class="chip-inner">📈 HPA</span></label>
+      <label class="chip"><input type="checkbox" value="vpa"><span class="chip-inner">⚖️ VPA</span></label>
+        <label class="chip"><input type="checkbox" value="networkpolicy"><span class="chip-inner">🛡️ NetworkPolicy</span></label>
+        <label class="chip"><input type="checkbox" value="rbac"><span class="chip-inner">🎫 RBAC</span></label>
+        <label class="chip"><input type="checkbox" value="secret"><span class="chip-inner">🔒 Secret</span></label>
+        <label class="chip"><input type="checkbox" value="pvc"><span class="chip-inner">💾 PVC</span></label>
+        <label class="chip"><input type="checkbox" value="cronjob"><span class="chip-inner">🕐 CronJob</span></label>
+        <label class="chip"><input type="checkbox" value="poddisruptionbudget" checked><span class="chip-inner">⚖️ PDB</span></label>
+      </div>
+    </div>
+
+    <!-- Environments -->
+    <div class="section">
+      <div class="section-label">Environments</div>
+      <div class="env-row">
+        <label class="env-pill dev"><input type="checkbox" value="dev" checked><span>dev</span></label>
+        <label class="env-pill test"><input type="checkbox" value="test" checked><span>test</span></label>
+        <label class="env-pill staging"><input type="checkbox" value="staging" checked><span>staging</span></label>
+        <label class="env-pill prod"><input type="checkbox" value="prod" checked><span>prod</span></label>
+      </div>
+    </div>
+
+    <!-- Security -->
+    <div class="section">
+      <div class="section-label">Security Controls</div>
+      <div class="toggles">
+        <div class="toggle-row">
+          <span class="toggle-label">🚫 Non-root (UID 65534)</span>
+          <label class="toggle"><input type="checkbox" id="sec-nonroot" checked><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">📖 Read-only filesystem</span>
+          <label class="toggle"><input type="checkbox" id="sec-readonly" checked><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">🔐 Drop ALL capabilities</span>
+          <label class="toggle"><input type="checkbox" id="sec-caps" checked><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">🔍 Seccomp RuntimeDefault</span>
+          <label class="toggle"><input type="checkbox" id="sec-seccomp" checked><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">⛔ No privilege escalation</span>
+          <label class="toggle"><input type="checkbox" id="sec-privesc" checked><span class="track"><span class="thumb"></span></span></label>
+        </div>
+        <div class="toggle-row">
+          <span class="toggle-label">🌐 NetworkPolicy deny-all</span>
+          <label class="toggle"><input type="checkbox" id="sec-netpol" checked><span class="track"><span class="thumb"></span></span></label>
+        </div>
+      </div>
+    </div>
+
+    <!-- KEDA -->
+    <div class="section">
+      <div class="section-label">
+        KEDA Autoscaling
+        <label class="toggle small" style="margin-left:auto">
+          <input type="checkbox" id="keda-enabled" onchange="toggleKeda(this.checked)">
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+      <div id="keda-opts" class="keda-opts hidden">
+        <div class="field">
+          <label class="field-label">Trigger Type</label>
+          <select class="input" id="keda-trigger" onchange="updateKedaTrigger(this.value)">
+            <option value="kafka">Apache Kafka</option>
+            <option value="rabbitmq">RabbitMQ</option>
+            <option value="redis">Redis</option>
+            <option value="sqs">AWS SQS</option>
+            <option value="prometheus">Prometheus</option>
+            <option value="cron">Cron</option>
+          </select>
+        </div>
+        <!-- Kafka sub-fields -->
+        <div id="keda-kafka" class="trigger-fields">
+          <div class="field"><label class="field-label">Bootstrap Servers</label><input class="input" id="kafka-bs" placeholder="kafka-broker:9092" value="kafka-broker:9092"></div>
+          <div class="field"><label class="field-label">Topic</label><input class="input" id="kafka-topic" placeholder="my-app-events"></div>
+          <div class="field"><label class="field-label">Consumer Group</label><input class="input" id="kafka-cg" placeholder="my-app-group"></div>
+          <div class="field"><label class="field-label">Lag Threshold</label><input class="input" id="kafka-lag" placeholder="100" value="100"></div>
+        </div>
+        <!-- RabbitMQ sub-fields -->
+        <div id="keda-rabbitmq" class="trigger-fields hidden">
+          <div class="field"><label class="field-label">Host URL</label><input class="input" id="rmq-host" placeholder="amqp://rabbitmq:5672"></div>
+          <div class="field"><label class="field-label">Queue Name</label><input class="input" id="rmq-queue" placeholder="my-queue"></div>
+        </div>
+        <!-- Redis sub-fields -->
+        <div id="keda-redis" class="trigger-fields hidden">
+          <div class="field"><label class="field-label">Redis Address</label><input class="input" id="redis-addr" placeholder="redis:6379"></div>
+          <div class="field"><label class="field-label">List Name</label><input class="input" id="redis-list" placeholder="my-list"></div>
+        </div>
+        <!-- SQS sub-fields -->
+        <div id="keda-sqs" class="trigger-fields hidden">
+          <div class="field"><label class="field-label">Queue URL</label><input class="input" id="sqs-url" placeholder="https://sqs.us-east-1.amazonaws.com/..."></div>
+          <div class="field"><label class="field-label">AWS Region</label><input class="input" id="sqs-region" placeholder="us-east-1" value="us-east-1"></div>
+        </div>
+        <!-- Prometheus sub-fields -->
+        <div id="keda-prometheus" class="trigger-fields hidden">
+          <div class="field"><label class="field-label">Prometheus URL</label><input class="input" id="prom-url" placeholder="http://prometheus-server.monitoring.svc"></div>
+          <div class="field"><label class="field-label">PromQL Query</label><input class="input" id="prom-query" placeholder="sum(rate(http_requests_total[2m]))"></div>
+        </div>
+        <!-- Cron sub-fields -->
+        <div id="keda-cron" class="trigger-fields hidden">
+          <div class="field"><label class="field-label">Timezone</label><input class="input" id="cron-tz" placeholder="UTC" value="UTC"></div>
+          <div class="field"><label class="field-label">Scale-up schedule</label><input class="input" id="cron-start" placeholder="0 8 * * 1-5" value="0 8 * * 1-5"></div>
+          <div class="field"><label class="field-label">Scale-down schedule</label><input class="input" id="cron-end" placeholder="0 18 * * 1-5" value="0 18 * * 1-5"></div>
+          <div class="field"><label class="field-label">Desired Replicas</label><input class="input" id="cron-desired" placeholder="5" value="5"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Secrets Provider -->
+    <div class="section">
+      <div class="section-label">Secrets Provider</div>
+      <div class="field">
+        <select class="input" id="secret-provider" onchange="updateSecretProvider(this.value)">
+          <option value="none">None (placeholder only)</option>
+          <option value="external-secrets">External Secrets Operator</option>
+          <option value="vault">HashiCorp Vault (VSO)</option>
+        </select>
+      </div>
+      <div id="eso-opts" class="secret-opts hidden">
+        <div class="field"><label class="field-label">SecretStore Name</label><input class="input" id="es-store-name" placeholder="vault-backend" value="vault-backend"></div>
+        <div class="field"><label class="field-label">Store Kind</label>
+          <select class="input" id="es-store-kind">
+            <option value="SecretStore">SecretStore (namespace)</option>
+            <option value="ClusterSecretStore">ClusterSecretStore</option>
+          </select>
+        </div>
+        <div class="field"><label class="field-label">Remote Secret Path</label><input class="input" id="es-remote-path" placeholder="secret/data/my-app"></div>
+      </div>
+      <div id="vault-opts" class="secret-opts hidden">
+        <div class="field"><label class="field-label">Vault Address</label><input class="input" id="vault-addr" placeholder="https://vault.example.com" value="https://vault.example.com"></div>
+        <div class="field"><label class="field-label">Vault Role</label><input class="input" id="vault-role" placeholder="my-app"></div>
+        <div class="field"><label class="field-label">Secret Path</label><input class="input" id="vault-path" placeholder="secret/data/my-app"></div>
+        <div class="field"><label class="field-label">Mount Path</label><input class="input" id="vault-mount" placeholder="secret" value="secret"></div>
+      </div>
+    </div>
+
+    <!-- Istio Service Mesh -->
+    <div class="section">
+      <div class="section-label">
+        Istio Service Mesh
+        <label class="toggle small" style="margin-left:auto">
+          <input type="checkbox" id="istio-enabled" onchange="toggleIstio(this.checked)">
+          <span class="track"><span class="thumb"></span></span>
+        </label>
+      </div>
+      <div id="istio-opts" class="istio-opts hidden">
+        <div class="field">
+          <label class="field-label">Cluster Gateway Name</label>
+          <input class="input" id="istio-gw-name" type="text" placeholder="e.g., main-gateway" value="main-gateway">
+        </div>
+        <div class="toggles">
+          <div class="toggle-row">
+            <span class="toggle-label">🔗 Mesh Gateway (internal traffic)</span>
+            <label class="toggle"><input type="checkbox" id="istio-mesh-gw" checked><span class="track"><span class="thumb"></span></span></label>
+          </div>
+        </div>
+        <div class="field">
+          <label class="field-label">VirtualService Port</label>
+          <input class="input" id="istio-vs-port" type="text" placeholder="80" value="80">
+        </div>
+        <div class="toggles">
+          <div class="toggle-row">
+            <span class="toggle-label">🎯 DestinationRule</span>
+            <label class="toggle"><input type="checkbox" id="istio-dr"><span class="track"><span class="thumb"></span></span></label>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">🔧 EnvoyFilter</span>
+            <label class="toggle"><input type="checkbox" id="istio-ef"><span class="track"><span class="thumb"></span></span></label>
+          </div>
+          <div class="toggle-row">
+            <span class="toggle-label">🔐 AuthorizationPolicy</span>
+            <label class="toggle"><input type="checkbox" id="istio-ap"><span class="track"><span class="thumb"></span></span></label>
+          </div>
+        </div>
+        <div id="istio-authz-policy" class="hidden">
+          <div class="field">
+            <label class="field-label">Authorization Action</label>
+            <select class="input" id="istio-authz-action">
+              <option value="ALLOW">ALLOW</option>
+              <option value="DENY">DENY</option>
+            </select>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Generate -->
+    <div class="section">
+      <button class="btn-generate" id="generate-btn" onclick="generate()">
+        <span class="btn-icon">⚡</span> Generate Blueprint
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- ══════════════════ MAIN OUTPUT ══════════════════ -->
+  <main class="main-output" id="main-output">
+
+    <!-- Placeholder -->
+    <div class="placeholder" id="placeholder">
+      <div class="ph-graphic">
+        <div class="ph-ring ph-ring-1"></div>
+        <div class="ph-ring ph-ring-2"></div>
+        <div class="ph-ring ph-ring-3"></div>
+        <div class="ph-icon">⎈</div>
+      </div>
+      <div class="ph-title">Configure &amp; Generate</div>
+      <div class="ph-desc">Select your package type, resources, environments<br>and security options, then click Generate Blueprint.</div>
+      <div class="ph-features">
+        <span class="ph-feat">✓ K8s 1.35+ Best Practices</span>
+        <span class="ph-feat">✓ Pod Security Standards</span>
+        <span class="ph-feat">✓ CIS Benchmark v1.9</span>
+        <span class="ph-feat">✓ KEDA · ESO · Vault · Istio</span>
+      </div>
+    </div>
+
+    <!-- Output area (hidden until generated) -->
+    <div class="output-area hidden" id="output-area">
+      <div class="output-topbar">
+        <div class="output-title" id="output-title">Output</div>
+        <div class="output-actions">
+          <button class="btn-action" id="btn-download" onclick="downloadZip()">
+            <span>⬇</span> Download ZIP
+          </button>
+          <div class="file-count" id="file-count">0 files</div>
+        </div>
+      </div>
+
+      <!-- Split view: file tree + code viewer -->
+      <div class="split-view">
+        <!-- File Tree -->
+        <div class="file-tree" id="file-tree"></div>
+
+        <!-- Code Viewer -->
+        <div class="code-panel">
+          <div class="code-topbar">
+            <div class="code-filepath" id="code-filepath">Select a file</div>
+            <div class="code-actions">
+              <button class="btn-sm" id="btn-copy" onclick="copyCurrentFile()">Copy</button>
+            </div>
+          </div>
+          <div class="code-viewer" id="code-viewer">
+            <div class="code-placeholder">← Select a file from the tree</div>
+          </div>
+
+          <!-- Commands Tab -->
+          <div class="cmd-drawer" id="cmd-drawer">
+            <div class="cmd-drawer-header" onclick="toggleCmdDrawer()">
+              <span>⚡ Deploy Commands</span>
+              <span id="cmd-chevron">▲</span>
+            </div>
+            <div class="cmd-drawer-body" id="cmd-drawer-body"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<div class="toast hidden" id="toast"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
