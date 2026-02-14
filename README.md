@@ -1,6 +1,6 @@
 # KubeBlueprint
 
-![KubeBlueprint Preview](./assets/preview2.png)
+![KubeBlueprint Preview](./assets/preview.png)
 
 A web-based tool for generating Kubernetes manifests using Helm and Kustomize. KubeBlueprint simplifies Kubernetes deployments by providing an intuitive interface to create production-ready configuration files with security, scaling, and advanced features out of the box.
 
