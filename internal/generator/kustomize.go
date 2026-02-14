@@ -159,8 +159,6 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
     }
   }
 
-	add("README.md", kustomReadme(name, req.Keda, req.Secrets))
-
 	return files
 }
 

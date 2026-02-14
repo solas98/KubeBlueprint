@@ -121,9 +121,7 @@ func GenerateHelm(req models.BlueprintRequest) []models.GeneratedFile {
 			add("templates/authorizationpolicy.yaml", helmAuthorizationPolicy(name, req.Istio))
 		}
 	}
-	add("templates/NOTES.txt", helmNotes(name))
 	add(".helmignore", helmIgnore())
-  add("README.md", helmReadme(name, envs, req.Keda, req.Secrets))
 
 	for _, env := range envs {
 		_ = env // values files already added above
