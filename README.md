@@ -47,12 +47,6 @@ git clone https://github.com/yourusername/KubeBlueprint.git
 cd KubeBlueprint
 ```
 
-### Install Dependencies
-
-```bash
-go mod download
-```
-
 ## Usage
 
 ### Running with `go run`
