@@ -37,7 +37,7 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
 	// ── base ─────────────────────────────────────────────────────────
 	baseResources := buildBaseResourceList(res, req)
 	add("base/kustomization.yaml", kustomBaseKustomization(name, imgRepo, imgTag, baseResources))
-	add("base/deployment.yaml", kustomDeployment(name, img, port, sec))
+  add("base/deployment.yaml", kustomDeployment(name, img, port, sec, res))
 
 	if res["service"] {
 		add("base/service.yaml", kustomService(name, port))
@@ -54,15 +54,15 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
 	if res["rbac"] {
 		add("base/rbac.yaml", kustomRBAC(name))
 	}
-	if res["hpa"] && !req.Keda.Enabled {
+	// Always generate HPA unless KEDA is enabled
+	if !req.Keda.Enabled {
 		add("base/hpa.yaml", kustomHPA(name))
 	}
 	if res["pvc"] {
 		add("base/pvc.yaml", kustomPVC(name))
 	}
-	if res["poddisruptionbudget"] {
-		add("base/pdb.yaml", kustomPDB(name))
-	}
+	// Always generate PDB
+	add("base/pdb.yaml", kustomPDB(name))
 	if res["vpa"] {
 		add("base/vpa.yaml", kustomVPA(name))
 	}
@@ -104,7 +104,7 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
 
   // dev
   if envSet["dev"] {
-    add("overlays/dev/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "latest", "dev"))
+    add("overlays/dev/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "latest", "dev", res, sec, req.Keda))
     add("overlays/dev/patches/deployment-patch.yaml", kustomDevDeploymentPatch(name))
     if res["ingress"] {
       add("overlays/dev/patches/ingress.yaml", kustomDevIngress(name))
@@ -115,11 +115,14 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
     if res["networkpolicy"] && sec.NetPolicy {
       add("overlays/dev/patches/networkpolicy-patch.yaml", kustomDevNetworkPolicy(name))
     }
+    if !req.Keda.Enabled {
+      add("overlays/dev/patches/hpa-patch.yaml", kustomDevHPAPatch(name))
+    }
   }
 
   // staging
   if envSet["staging"] {
-    add("overlays/staging/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "staging", "staging"))
+    add("overlays/staging/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "staging", "staging", res, sec, req.Keda))
     add("overlays/staging/patches/deployment-patch.yaml", kustomStagingDeploymentPatch(name))
     if res["ingress"] {
       add("overlays/staging/patches/ingress.yaml", kustomStagingIngress(name))
@@ -127,33 +130,37 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
     if res["configmap"] {
       add("overlays/staging/patches/configmap-patch.yaml", kustomStagingConfigMap(name))
     }
+    if !req.Keda.Enabled {
+      add("overlays/staging/patches/hpa-patch.yaml", kustomStagingHPAPatch(name))
+    }
   }
 
   // test
   if envSet["test"] {
-    add("overlays/test/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "test", "test"))
-    add("overlays/test/patches/deployment-patch.yaml", kustomStagingDeploymentPatch(name))
+    add("overlays/test/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "test", "test", res, sec, req.Keda))
+    add("overlays/test/patches/deployment-patch.yaml", kustomTestDeploymentPatch(name))
     if res["ingress"] {
       add("overlays/test/patches/ingress.yaml", kustomStagingIngress(name))
     }
     if res["configmap"] {
       add("overlays/test/patches/configmap-patch.yaml", kustomStagingConfigMap(name))
     }
+    if !req.Keda.Enabled {
+      add("overlays/test/patches/hpa-patch.yaml", kustomTestHPAPatch(name))
+    }
   }
 
   // prod
   if envSet["prod"] {
-    add("overlays/prod/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "1.0.0", "prod"))
+    add("overlays/prod/kustomization.yaml", kustomOverlayKustomization(name, imgRepo, "1.0.0", "prod", res, sec, req.Keda))
     add("overlays/prod/patches/deployment-patch.yaml", kustomProdDeploymentPatch(name))
     if res["ingress"] {
       add("overlays/prod/patches/ingress.yaml", kustomProdIngress(name))
     }
-    if res["hpa"] && !req.Keda.Enabled {
+    if !req.Keda.Enabled {
       add("overlays/prod/patches/hpa-patch.yaml", kustomProdHPAPatch(name))
     }
-    if res["poddisruptionbudget"] {
-      add("overlays/prod/patches/pdb-patch.yaml", kustomProdPDBPatch(name))
-    }
+    add("overlays/prod/patches/pdb-patch.yaml", kustomProdPDBPatch(name))
     if res["configmap"] {
       add("overlays/prod/patches/configmap-patch.yaml", kustomProdConfigMap(name))
     }
@@ -182,12 +189,18 @@ func buildBaseResourceList(res map[string]bool, req models.BlueprintRequest) []s
 	if res["hpa"] && !req.Keda.Enabled {
 		all = append(all, "hpa.yaml")
 	}
+	// Always include HPA
+	if !req.Keda.Enabled {
+		all = append(all, "hpa.yaml")
+	}
 	if res["pvc"] {
 		all = append(all, "pvc.yaml")
 	}
 	if res["poddisruptionbudget"] {
 		all = append(all, "pdb.yaml")
 	}
+	// Always include PDB
+	all = append(all, "pdb.yaml")
 	if res["vpa"] {
 		all = append(all, "vpa.yaml")
 	}
@@ -242,7 +255,7 @@ images:
 // ─────────────────────────────────────────────
 // base/deployment.yaml
 // ─────────────────────────────────────────────
-func kustomDeployment(name, image string, port int, sec models.Security) string {
+func kustomDeployment(name, image string, port int, sec models.Security, res map[string]bool) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf(`# Deployment — %s
 # K8s 1.29–1.35+ best practices
@@ -389,7 +402,11 @@ spec:
             preStop:
               exec:
                 command: ["/bin/sh", "-c", "sleep 5"]
-          volumeMounts:
+`, port, name, port, port, port))
+
+    // Only include tmp/varrun volume mounts and volumes when PVCs are requested
+    if res["pvc"] {
+        b.WriteString(`      volumeMounts:
             - name: tmp
               mountPath: /tmp
             - name: varrun
@@ -401,9 +418,25 @@ spec:
         - name: varrun
           emptyDir:
             sizeLimit: 10Mi
-`, port, name, port, port, port))
+`)
+    }
 
-	return b.String()
+    // remaining tail sections
+    b.WriteString(`      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+`)
+
+    return b.String()
 }
 
 func kustomService(name string, port int) string {
@@ -415,8 +448,7 @@ metadata:
     app.kubernetes.io/name: %s
 spec:
   type: ClusterIP
-  # Topology-aware routing (K8s 1.27+ stable)
-  trafficDistribution: PreferClose
+  trafficDistribution: PreferSameNode
   ports:
     - port: 80
       targetPort: http
@@ -449,7 +481,6 @@ metadata:
 data:
   LOG_LEVEL: info
   PORT: "%d"
-  APP_ENV: production
 `, name, name, port)
 }
 
@@ -577,7 +608,7 @@ spec:
     kind: Deployment
     name: %s
   minReplicas: 2
-  maxReplicas: 10
+  maxReplicas: 6
   metrics:
     - type: Resource
       resource:
@@ -626,6 +657,16 @@ spec:
       storage: 1Gi
 `, name, name)
 }
+
+// Note: to customize storage class or size, edit the generated PVC
+// Example:
+// spec:
+//   accessModes:
+//     - ReadWriteOnce
+//   storageClassName: fast
+//   resources:
+//     requests:
+//       storage: 30Gi
 
 func kustomPDB(name string) string {
 	return fmt.Sprintf(`apiVersion: policy/v1
@@ -1128,30 +1169,54 @@ spec:
 // ─────────────────────────────────────────────
 // Overlays
 // ─────────────────────────────────────────────
-func kustomOverlayKustomization(name, imgRepo, imgTag, env string) string {
+func kustomOverlayKustomization(name, imgRepo, imgTag, env string, res map[string]bool, sec models.Security, keda models.KedaOpts) string {
 	ns := fmt.Sprintf("%s-%s", name, env)
 
 	var extraResources string
 	var extraPatches string
 	switch env {
 	case "dev":
-		extraResources = `  - patches/ingress.yaml`
+		if res["ingress"] {
+			extraResources = `  - patches/ingress.yaml`
+		}
 		extraPatches = `  - path: patches/deployment-patch.yaml
   - path: patches/configmap-patch.yaml`
+		if res["networkpolicy"] && sec.NetPolicy {
+			extraPatches += `
+  - path: patches/networkpolicy-patch.yaml`
+		}
+		if !keda.Enabled {
+			extraPatches += `
+  - path: patches/hpa-patch.yaml`
+		}
 	case "staging":
-		extraResources = `  - patches/ingress.yaml`
+		if res["ingress"] {
+			extraResources = `  - patches/ingress.yaml`
+		}
 		extraPatches = `  - path: patches/deployment-patch.yaml
   - path: patches/configmap-patch.yaml`
+		if !keda.Enabled {
+			extraPatches += `
+  - path: patches/hpa-patch.yaml`
+		}
 	case "prod":
-		extraResources = `  - patches/ingress.yaml`
+		if res["ingress"] {
+			extraResources = `  - patches/ingress.yaml`
+		}
 		extraPatches = `  - path: patches/deployment-patch.yaml
   - path: patches/hpa-patch.yaml
   - path: patches/pdb-patch.yaml
   - path: patches/configmap-patch.yaml`
 	case "test":
-		extraResources = `  - patches/ingress.yaml`
+		if res["ingress"] {
+			extraResources = `  - patches/ingress.yaml`
+		}
 		extraPatches = `  - path: patches/deployment-patch.yaml
   - path: patches/configmap-patch.yaml`
+		if !keda.Enabled {
+			extraPatches += `
+  - path: patches/hpa-patch.yaml`
+		}
 	}
 
 	return fmt.Sprintf(`apiVersion: kustomize.config.k8s.io/v1beta1
@@ -1205,10 +1270,9 @@ func kustomDevIngress(name string) string {
 kind: Ingress
 metadata:
   name: %s
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+  annotations: {}
 spec:
-  ingressClassName: nginx
+  ingressClassName: ""
   rules:
     - host: %s-dev.example.com
       http:
@@ -1231,6 +1295,17 @@ metadata:
 data:
   LOG_LEVEL: debug
   APP_ENV: development
+`, name)
+}
+
+func kustomDevHPAPatch(name string) string {
+	return fmt.Sprintf(`apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: %s
+spec:
+  minReplicas: 1
+  maxReplicas: 3
 `, name)
 }
 
@@ -1281,10 +1356,9 @@ func kustomStagingIngress(name string) string {
 kind: Ingress
 metadata:
   name: %s
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  annotations: {}
 spec:
-  ingressClassName: nginx
+  ingressClassName: ""
   tls:
     - secretName: %s-staging-tls
       hosts:
@@ -1311,6 +1385,17 @@ metadata:
 data:
   LOG_LEVEL: info
   APP_ENV: staging
+`, name)
+}
+
+func kustomStagingHPAPatch(name string) string {
+	return fmt.Sprintf(`apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: %s
+spec:
+  minReplicas: 3
+  maxReplicas: 6
 `, name)
 }
 
@@ -1343,12 +1428,9 @@ func kustomProdIngress(name string) string {
 kind: Ingress
 metadata:
   name: %s
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  annotations: {}
 spec:
-  ingressClassName: nginx
+  ingressClassName: ""
   tls:
     - secretName: %s-tls
       hosts:
@@ -1374,8 +1456,41 @@ metadata:
   name: %s
 spec:
   minReplicas: 3
-  maxReplicas: 20
+  maxReplicas: 6
 `, name)
+}
+
+func kustomTestHPAPatch(name string) string {
+	return fmt.Sprintf(`apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: %s
+spec:
+  minReplicas: 1
+  maxReplicas: 3
+`, name)
+}
+
+func kustomTestDeploymentPatch(name string) string {
+	return fmt.Sprintf(`apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: %s
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: %s
+          imagePullPolicy: Always
+          resources:
+            limits:
+              cpu: 200m
+              memory: 128Mi
+            requests:
+              cpu: 50m
+              memory: 64Mi
+`, name, name)
 }
 
 func kustomProdPDBPatch(name string) string {

@@ -146,7 +146,7 @@ async function generate() {
     showToast('✗ ' + err.message, true);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⚡</span> Generate Blueprint';
+    btn.innerHTML = 'Generate Blueprint';
   }
 }
 
@@ -223,15 +223,10 @@ function makeFileEl(name, idx, depth) {
     : ext === 'txt' ? 'txt'
     : 'ignore';
 
-  const icon = ext === 'yaml' || ext === 'yml' ? '📄'
-    : ext === 'tpl' ? '🔧'
-    : ext === 'md' ? '📝'
-    : '📋';
-
   const el = document.createElement('div');
   el.className = `tree-file ${cls}`;
   el.dataset.idx = idx;
-  el.innerHTML = `<span class="ti" style="margin-left:${depth * 14}px">${icon}</span><span>${name}</span>`;
+  el.innerHTML = `<span class="ti" style="margin-left:${depth * 14}px"></span><span>${name}</span>`;
   el.onclick = () => selectFile(idx);
   return el;
 }
