@@ -43,7 +43,7 @@ func GenerateKustomize(req models.BlueprintRequest) []models.GeneratedFile {
 		add("base/service.yaml", kustomService(name, port))
 	}
 	if res["serviceaccount"] {
-		add("base/serviceaccount.yaml", kustomServiceAccount(name))
+		add("base/serviceaccount.yaml", kustomServiceAccount(name, req.Secrets))
 	}
 	if res["configmap"] {
 		add("base/configmap.yaml", kustomConfigMap(name, port))
@@ -462,16 +462,28 @@ spec:
 `, name, name, name)
 }
 
-func kustomServiceAccount(name string) string {
+func kustomServiceAccount(name string, secrets ...models.SecretOpts) string {
+	var annotationsBlock string
+	if len(secrets) > 0 && secrets[0].Provider == "external-secrets" && secrets[0].ESBackendProvider == "aws" {
+		roleARN := secrets[0].ESAWSRoleARN
+		if roleARN == "" {
+			roleARN = "arn:aws:iam::123456789012:role/my-app-role"
+		}
+		annotationsBlock = fmt.Sprintf(`
+    # IRSA — override per overlay with a strategic-merge patch
+    eks.amazonaws.com/role-arn: %s`, roleARN)
+	} else {
+		annotationsBlock = " {}"
+	}
 	return fmt.Sprintf(`apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: %s
   labels:
     app.kubernetes.io/name: %s
-  annotations: {}
+  annotations:%s
 automountServiceAccountToken: false
-`, name, name)
+`, name, name, annotationsBlock)
 }
 
 func kustomConfigMap(name string, port int) string {
@@ -825,7 +837,15 @@ data: {}
 func kustomExternalSecret(name string, opts models.SecretOpts) string {
 	storeName := opts.ESSecretStoreName
 	if storeName == "" {
-		storeName = "vault-backend"
+		if opts.ESBackendProvider == "aws" && opts.ESAWSService == "ParameterStore" {
+			storeName = "aws-parameterstore"
+		} else {
+			defaults := map[string]string{"aws": "aws-secretsmanager", "gcp": "gcp-secretmanager", "azure": "azure-keyvault", "vault": "vault-backend"}
+			storeName = defaults[opts.ESBackendProvider]
+			if storeName == "" {
+				storeName = "aws-secretsmanager"
+			}
+		}
 	}
 	storeKind := opts.ESSecretStoreKind
 	if storeKind == "" {
@@ -833,7 +853,20 @@ func kustomExternalSecret(name string, opts models.SecretOpts) string {
 	}
 	remotePath := opts.ESRemotePath
 	if remotePath == "" {
-		remotePath = fmt.Sprintf("secret/data/%s", name)
+		switch opts.ESBackendProvider {
+		case "gcp":
+			remotePath = fmt.Sprintf("projects/-/secrets/%s", name)
+		case "azure":
+			remotePath = name
+		case "vault":
+			remotePath = fmt.Sprintf("secret/data/%s", name)
+		default: // aws
+			if opts.ESAWSService == "ParameterStore" {
+				remotePath = fmt.Sprintf("/%s/secrets", name)
+			} else {
+				remotePath = fmt.Sprintf("%s/secrets", name)
+			}
+		}
 	}
 	return fmt.Sprintf(`# ExternalSecret — application-scoped
 # Requires: External Secrets Operator
@@ -872,8 +905,87 @@ spec:
 func kustomSecretStore(name string, opts models.SecretOpts) string {
 	storeName := opts.ESSecretStoreName
 	if storeName == "" {
-		storeName = "vault-backend"
+		if opts.ESBackendProvider == "aws" && opts.ESAWSService == "ParameterStore" {
+			storeName = "aws-parameterstore"
+		} else {
+			defaults := map[string]string{"aws": "aws-secretsmanager", "gcp": "gcp-secretmanager", "azure": "azure-keyvault", "vault": "vault-backend"}
+			storeName = defaults[opts.ESBackendProvider]
+			if storeName == "" {
+				storeName = "aws-secretsmanager"
+			}
+		}
 	}
+
+	var providerBlock string
+	switch opts.ESBackendProvider {
+	case "gcp":
+		projectID := opts.ESGCPProjectID
+		if projectID == "" {
+			projectID = "my-gcp-project"
+		}
+		providerBlock = fmt.Sprintf(`    gcpsm:
+      projectID: %s
+      auth:
+        workloadIdentity:
+          clusterLocation: us-central1
+          clusterName: my-cluster
+          serviceAccountRef:
+            name: %s
+`, projectID, name)
+	case "azure":
+		vaultURL := opts.ESAzureVaultURL
+		if vaultURL == "" {
+			vaultURL = "https://my-keyvault.vault.azure.net"
+		}
+		providerBlock = fmt.Sprintf(`    azurekv:
+      vaultUrl: %s
+      authType: WorkloadIdentity
+      serviceAccountRef:
+        name: %s
+`, vaultURL, name)
+	case "vault":
+		server := opts.ESVaultServer
+		if server == "" {
+			server = "https://vault.example.com"
+		}
+		vaultPath := opts.ESVaultPath
+		if vaultPath == "" {
+			vaultPath = "secret"
+		}
+		role := opts.ESVaultRole
+		if role == "" {
+			role = name
+		}
+		providerBlock = fmt.Sprintf(`    vault:
+      server: %q
+      path: %q
+      version: "v2"
+      auth:
+        kubernetes:
+          mountPath: "kubernetes"
+          role: %q
+          serviceAccountRef:
+            name: %s
+`, server, vaultPath, role, name)
+	default: // "aws"
+		region := opts.ESAWSRegion
+		if region == "" {
+			region = "us-east-1"
+		}
+		service := opts.ESAWSService
+		if service == "" {
+			service = "SecretsManager"
+		}
+		providerBlock = fmt.Sprintf(`    aws:
+      service: %s
+      region: %s
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: %s
+`, service, region, name)
+	}
+
 	return fmt.Sprintf(`# SecretStore — application-namespace scoped
 apiVersion: external-secrets.io/v1beta1
 kind: SecretStore
@@ -883,17 +995,7 @@ metadata:
     app.kubernetes.io/name: %s
 spec:
   provider:
-    vault:
-      server: "https://vault.example.com"
-      path: "secret"
-      version: "v2"
-      auth:
-        kubernetes:
-          mountPath: "kubernetes"
-          role: "%s"
-          serviceAccountRef:
-            name: %s
-`, storeName, name, name, name)
+%s`, storeName, name, providerBlock)
 }
 
 // ─────────────────────────────────────────────

@@ -268,7 +268,7 @@ select.input{cursor:pointer}
 
 /* ── KEDA / SECRET opts ──────────────────────── */
 .keda-opts,.secret-opts{margin-top:10px;display:flex;flex-direction:column;gap:8px}
-.trigger-fields{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.trigger-fields,.eso-backend-fields{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .hidden{display:none!important}
 
 /* ── GENERATE BUTTON ─────────────────────────── */

@@ -195,7 +195,36 @@
         </select>
       </div>
       <div id="eso-opts" class="secret-opts hidden">
-        <div class="field"><label class="field-label">SecretStore Name</label><input class="input" id="es-store-name" placeholder="vault-backend" value="vault-backend"></div>
+        <div class="field"><label class="field-label">Backend Provider</label>
+          <select class="input" id="es-backend-provider" onchange="updateESOBackend(this.value)">
+            <option value="aws">AWS Secrets Manager</option>
+            <option value="gcp">GCP Secret Manager</option>
+            <option value="azure">Azure Key Vault</option>
+            <option value="vault">HashiCorp Vault</option>
+          </select>
+        </div>
+        <div id="eso-aws" class="eso-backend-fields">
+          <div class="field"><label class="field-label">AWS Service</label>
+            <select class="input" id="eso-aws-service">
+              <option value="SecretsManager">Secrets Manager</option>
+              <option value="ParameterStore">Parameter Store (SSM)</option>
+            </select>
+          </div>
+          <div class="field"><label class="field-label">AWS Region</label><input class="input" id="eso-aws-region" placeholder="us-east-1" value="us-east-1"></div>
+          <div class="field"><label class="field-label">IAM Role ARN (IRSA)</label><input class="input" id="eso-aws-role-arn" placeholder="arn:aws:iam::123456789:role/my-app-role"></div>
+        </div>
+        <div id="eso-gcp" class="eso-backend-fields hidden">
+          <div class="field"><label class="field-label">GCP Project ID</label><input class="input" id="eso-gcp-project" placeholder="my-gcp-project"></div>
+        </div>
+        <div id="eso-azure" class="eso-backend-fields hidden">
+          <div class="field"><label class="field-label">Azure Key Vault URL</label><input class="input" id="eso-azure-vault-url" placeholder="https://my-keyvault.vault.azure.net"></div>
+        </div>
+        <div id="eso-vault" class="eso-backend-fields hidden">
+          <div class="field"><label class="field-label">Vault Server</label><input class="input" id="eso-vault-server" placeholder="https://vault.example.com" value="https://vault.example.com"></div>
+          <div class="field"><label class="field-label">Vault Path</label><input class="input" id="eso-vault-path" placeholder="secret" value="secret"></div>
+          <div class="field"><label class="field-label">Vault Role</label><input class="input" id="eso-vault-role" placeholder="my-app"></div>
+        </div>
+        <div class="field"><label class="field-label">SecretStore Name</label><input class="input" id="es-store-name" placeholder="aws-secrets-manager" value="aws-secrets-manager"></div>
         <div class="field"><label class="field-label">Store Kind</label>
           <select class="input" id="es-store-kind">
             <option value="SecretStore">SecretStore (namespace)</option>

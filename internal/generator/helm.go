@@ -40,7 +40,7 @@ func GenerateHelm(req models.BlueprintRequest) []models.GeneratedFile {
 	}
 
 	add("Chart.yaml", helmChartYaml(name))
-  add("values.yaml", helmValuesBase(name, imgRepo, imgTag, port, sec, res))
+  add("values.yaml", helmValuesBase(name, imgRepo, imgTag, port, sec, res, req.Secrets))
   // Only emit per-env override files for environments requested by the user
   envSet := toSet(envs)
   if envSet["dev"] {
@@ -157,7 +157,7 @@ annotations:
 // ─────────────────────────────────────────────
 // values.yaml
 // ─────────────────────────────────────────────
-func helmValuesBase(name, imgRepo, imgTag string, port int, sec models.Security, res map[string]bool) string {
+func helmValuesBase(name, imgRepo, imgTag string, port int, sec models.Security, res map[string]bool, secrets ...models.SecretOpts) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf(`# =================================================================
 # %s — default values  (override per env in values-{env}.yaml)
@@ -177,14 +177,27 @@ fullnameOverride: ""
 `, name, imgRepo, imgTag))
 
 	if res["serviceaccount"] {
-		b.WriteString(`# ── Service Account ──────────────────────────────────────────────
+		// Build SA annotations block — IRSA annotation when AWS ESO is selected
+		var saAnnotationsBlock string
+		if len(secrets) > 0 && secrets[0].Provider == "external-secrets" && secrets[0].ESBackendProvider == "aws" {
+			roleARN := secrets[0].ESAWSRoleARN
+			if roleARN == "" {
+				roleARN = "arn:aws:iam::123456789012:role/my-app-role"
+			}
+			saAnnotationsBlock = fmt.Sprintf(`
+    # IRSA — override per environment in values-{env}.yaml
+    eks.amazonaws.com/role-arn: %s`, roleARN)
+		} else {
+			saAnnotationsBlock = " {}"
+		}
+		b.WriteString(fmt.Sprintf(`# ── Service Account ──────────────────────────────────────────────
 serviceAccount:
   create: true
-  annotations: {}
+  annotations:%s
   # Never auto-mount — use explicit volumeMount if needed
   automountServiceAccountToken: false
 
-`)
+`, saAnnotationsBlock))
 	}
 
 	b.WriteString(fmt.Sprintf(`# ── Pod metadata ─────────────────────────────────────────────────
@@ -1246,7 +1259,15 @@ data: {}
 func helmExternalSecret(name string, opts models.SecretOpts) string {
 	storeName := opts.ESSecretStoreName
 	if storeName == "" {
-		storeName = "vault-backend"
+		if opts.ESBackendProvider == "aws" && opts.ESAWSService == "ParameterStore" {
+			storeName = "aws-parameterstore"
+		} else {
+			defaults := map[string]string{"aws": "aws-secretsmanager", "gcp": "gcp-secretmanager", "azure": "azure-keyvault", "vault": "vault-backend"}
+			storeName = defaults[opts.ESBackendProvider]
+			if storeName == "" {
+				storeName = "aws-secretsmanager"
+			}
+		}
 	}
 	storeKind := opts.ESSecretStoreKind
 	if storeKind == "" {
@@ -1254,7 +1275,20 @@ func helmExternalSecret(name string, opts models.SecretOpts) string {
 	}
 	remotePath := opts.ESRemotePath
 	if remotePath == "" {
-		remotePath = fmt.Sprintf("secret/data/%s", name)
+		switch opts.ESBackendProvider {
+		case "gcp":
+			remotePath = fmt.Sprintf("projects/-/secrets/%s", name)
+		case "azure":
+			remotePath = name
+		case "vault":
+			remotePath = fmt.Sprintf("secret/data/%s", name)
+		default: // aws
+			if opts.ESAWSService == "ParameterStore" {
+				remotePath = fmt.Sprintf("/%s/secrets", name)
+			} else {
+				remotePath = fmt.Sprintf("%s/secrets", name)
+			}
+		}
 	}
 	return fmt.Sprintf(`# ExternalSecret — application-scoped secret sync
 # Requires: External Secrets Operator (https://external-secrets.io)
@@ -1311,11 +1345,89 @@ spec:
 func helmSecretStore(name string, opts models.SecretOpts) string {
 	storeName := opts.ESSecretStoreName
 	if storeName == "" {
-		storeName = "vault-backend"
+		if opts.ESBackendProvider == "aws" && opts.ESAWSService == "ParameterStore" {
+			storeName = "aws-parameterstore"
+		} else {
+			defaults := map[string]string{"aws": "aws-secretsmanager", "gcp": "gcp-secretmanager", "azure": "azure-keyvault", "vault": "vault-backend"}
+			storeName = defaults[opts.ESBackendProvider]
+			if storeName == "" {
+				storeName = "aws-secretsmanager"
+			}
+		}
 	}
+
+	var providerBlock string
+	switch opts.ESBackendProvider {
+	case "gcp":
+		projectID := opts.ESGCPProjectID
+		if projectID == "" {
+			projectID = "my-gcp-project"
+		}
+		providerBlock = fmt.Sprintf(`    gcpsm:
+      projectID: %s
+      auth:
+        workloadIdentity:
+          clusterLocation: us-central1
+          clusterName: my-cluster
+          serviceAccountRef:
+            name: {{ include "%s.serviceAccountName" . }}
+`, projectID, name)
+	case "azure":
+		vaultURL := opts.ESAzureVaultURL
+		if vaultURL == "" {
+			vaultURL = "https://my-keyvault.vault.azure.net"
+		}
+		providerBlock = fmt.Sprintf(`    azurekv:
+      vaultUrl: %s
+      authType: WorkloadIdentity
+      serviceAccountRef:
+        name: {{ include "%s.serviceAccountName" . }}
+`, vaultURL, name)
+	case "vault":
+		server := opts.ESVaultServer
+		if server == "" {
+			server = "https://vault.example.com"
+		}
+		vaultPath := opts.ESVaultPath
+		if vaultPath == "" {
+			vaultPath = "secret"
+		}
+		role := opts.ESVaultRole
+		if role == "" {
+			role = name
+		}
+		providerBlock = fmt.Sprintf(`    vault:
+      server: %q
+      path: %q
+      version: "v2"
+      auth:
+        kubernetes:
+          mountPath: "kubernetes"
+          role: %q
+          serviceAccountRef:
+            name: {{ include "%s.serviceAccountName" . }}
+`, server, vaultPath, role, name)
+	default: // "aws"
+		region := opts.ESAWSRegion
+		if region == "" {
+			region = "us-east-1"
+		}
+		service := opts.ESAWSService
+		if service == "" {
+			service = "SecretsManager"
+		}
+		providerBlock = fmt.Sprintf(`    aws:
+      service: %s
+      region: %s
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: {{ include "%s.serviceAccountName" . }}
+`, service, region, name)
+	}
+
 	return fmt.Sprintf(`# SecretStore — application-namespace scoped provider configuration
 # For cross-namespace sharing use ClusterSecretStore instead.
-# This only configures HOW to connect — no cluster-bootstrap credentials here.
 apiVersion: external-secrets.io/v1beta1
 kind: SecretStore
 metadata:
@@ -1325,38 +1437,7 @@ metadata:
     {{- include "%s.labels" . | nindent 4 }}
 spec:
   provider:
-    # ── HashiCorp Vault example ───────────────────────────────────
-    vault:
-      server: "https://vault.example.com"
-      path: "secret"
-      version: "v2"
-      auth:
-        # Use Kubernetes ServiceAccount for authentication (recommended)
-        kubernetes:
-          mountPath: "kubernetes"
-          role: "%s"
-          serviceAccountRef:
-            name: {{ include "%s.serviceAccountName" . }}
-
-    # ── AWS Secrets Manager example (uncomment to use) ────────────
-    # aws:
-    #   service: SecretsManager
-    #   region: eu-west-1
-    #   auth:
-    #     jwt:
-    #       serviceAccountRef:
-    #         name: {{ include "%s.serviceAccountName" . }}
-
-    # ── GCP Secret Manager example (uncomment to use) ─────────────
-    # gcpsm:
-    #   projectID: my-gcp-project
-    #   auth:
-    #     workloadIdentity:
-    #       clusterLocation: europe-west1
-    #       clusterName: my-cluster
-    #       serviceAccountRef:
-    #         name: {{ include "%s.serviceAccountName" . }}
-`, storeName, name, name, name, name, name)
+%s`, storeName, name, providerBlock)
 }
 
 // ─────────────────────────────────────────────
