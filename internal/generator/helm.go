@@ -40,23 +40,23 @@ func GenerateHelm(req models.BlueprintRequest) []models.GeneratedFile {
 	}
 
 	add("Chart.yaml", helmChartYaml(name))
-  add("values.yaml", helmValuesBase(name, imgRepo, imgTag, port, sec))
+  add("values.yaml", helmValuesBase(name, imgRepo, imgTag, port, sec, res, req.Secrets))
   // Only emit per-env override files for environments requested by the user
   envSet := toSet(envs)
   if envSet["dev"] {
-    add("values-dev.yaml", helmValuesDev(name, imgRepo))
+    add("values-dev.yaml", helmValuesDev(name, imgRepo, res))
   }
   if envSet["test"] {
-    add("values-test.yaml", helmValuesTest(name, imgRepo))
+    add("values-test.yaml", helmValuesTest(name, imgRepo, res))
   }
   if envSet["staging"] {
-    add("values-staging.yaml", helmValuesStaging(name, imgRepo))
+    add("values-staging.yaml", helmValuesStaging(name, imgRepo, res))
   }
   if envSet["prod"] {
-    add("values-prod.yaml", helmValuesProd(name, imgRepo))
+    add("values-prod.yaml", helmValuesProd(name, imgRepo, res))
   }
 	add("templates/_helpers.tpl", helmHelpers(name))
-	add("templates/deployment.yaml", helmDeployment(name, port, sec))
+  add("templates/deployment.yaml", helmDeployment(name, port, sec, res))
 	if res["service"] {
 		add("templates/service.yaml", helmService(name))
 	}
@@ -69,8 +69,10 @@ func GenerateHelm(req models.BlueprintRequest) []models.GeneratedFile {
 	if res["configmap"] {
 		add("templates/configmap.yaml", helmConfigMap(name))
 	}
-	if res["hpa"] && !req.Keda.Enabled {
-		add("templates/hpa.yaml", helmHPA(name))
+	if res["hpa"] {
+		if !req.Keda.Enabled {
+			add("templates/hpa.yaml", helmHPA(name))
+		}
 	}
   // Vertical Pod Autoscaler (VPA) - optional
   if res["vpa"] {
@@ -86,11 +88,11 @@ func GenerateHelm(req models.BlueprintRequest) []models.GeneratedFile {
 	if res["pvc"] {
 		add("templates/pvc.yaml", helmPVC(name))
 	}
-	if res["poddisruptionbudget"] {
+	if res["pdb"] {
 		add("templates/pdb.yaml", helmPDB(name))
 	}
 	if res["cronjob"] {
-		add("templates/cronjob.yaml", helmCronJob(name, img, sec))
+    add("templates/cronjob.yaml", helmCronJob(name, img, sec, res))
 	}
 	if res["secret"] {
 		if req.Secrets.Provider == "external-secrets" {
@@ -155,7 +157,7 @@ annotations:
 // ─────────────────────────────────────────────
 // values.yaml
 // ─────────────────────────────────────────────
-func helmValuesBase(name, imgRepo, imgTag string, port int, sec models.Security) string {
+func helmValuesBase(name, imgRepo, imgTag string, port int, sec models.Security, res map[string]bool, secrets ...models.SecretOpts) string {
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf(`# =================================================================
 # %s — default values  (override per env in values-{env}.yaml)
@@ -172,15 +174,33 @@ image:
 
 nameOverride: ""
 fullnameOverride: ""
+`, name, imgRepo, imgTag))
 
-# ── Service Account ──────────────────────────────────────────────
+	if res["serviceaccount"] {
+		// Build SA annotations block — IRSA annotation when AWS ESO is selected
+		var saAnnotationsBlock string
+		if len(secrets) > 0 && secrets[0].Provider == "external-secrets" && secrets[0].ESBackendProvider == "aws" {
+			roleARN := secrets[0].ESAWSRoleARN
+			if roleARN == "" {
+				roleARN = "arn:aws:iam::123456789012:role/my-app-role"
+			}
+			saAnnotationsBlock = fmt.Sprintf(`
+    # IRSA — override per environment in values-{env}.yaml
+    eks.amazonaws.com/role-arn: %s`, roleARN)
+		} else {
+			saAnnotationsBlock = " {}"
+		}
+		b.WriteString(fmt.Sprintf(`# ── Service Account ──────────────────────────────────────────────
 serviceAccount:
   create: true
-  annotations: {}
+  annotations:%s
   # Never auto-mount — use explicit volumeMount if needed
   automountServiceAccountToken: false
 
-# ── Pod metadata ─────────────────────────────────────────────────
+`, saAnnotationsBlock))
+	}
+
+	b.WriteString(fmt.Sprintf(`# ── Pod metadata ─────────────────────────────────────────────────
 podAnnotations:
   prometheus.io/scrape: "true"
   prometheus.io/port: %q
@@ -189,7 +209,7 @@ podLabels: {}
 # ── Pod-level Security Context ───────────────────────────────────
 # CIS Kubernetes Benchmark v1.9 + NSA Hardening Guidance
 podSecurityContext:
-`, name, imgRepo, imgTag, fmt.Sprintf("%d", port)))
+`, fmt.Sprintf("%d", port)))
 
 	if sec.NonRoot {
 		b.WriteString(`  runAsNonRoot: true
@@ -234,95 +254,6 @@ containerSecurityContext:
 `)
 	}
 	b.WriteString(fmt.Sprintf(`
-# ── Service ───────────────────────────────────────────────────────
-service:
-  type: ClusterIP
-  port: 80
-  targetPort: %d
-  protocol: TCP
-  # Topology-aware routing (K8s 1.27+ stable)
-  trafficDistribution: PreferClose
-
-# ── Ingress ───────────────────────────────────────────────────────
-ingress:
-  enabled: true
-  className: nginx
-  annotations:
-    nginx.ingress.kubernetes.io/ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
-    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
-  hosts:
-    - host: %s.example.com
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - secretName: %s-tls
-      hosts:
-        - %s.example.com
-
-# ── Resources ─────────────────────────────────────────────────────
-# Always set both requests AND limits (QoS: Guaranteed or Burstable)
-resources:
-  limits:
-    cpu: 500m
-    memory: 256Mi
-    ephemeral-storage: 512Mi
-  requests:
-    cpu: 100m
-    memory: 128Mi
-    ephemeral-storage: 128Mi
-
-# ── Autoscaling (HPA v2 — disabled when KEDA is used) ─────────────
-autoscaling:
-  enabled: true
-  minReplicas: 2
-  maxReplicas: 10
-  targetCPUUtilizationPercentage: 70
-  targetMemoryUtilizationPercentage: 80
-  # Scale-down stabilisation (prevents flapping)
-  scaleDownStabilizationWindowSeconds: 300
-
-# ── Probes ────────────────────────────────────────────────────────
-livenessProbe:
-  httpGet:
-    path: /healthz
-    port: %d
-    scheme: HTTP
-  initialDelaySeconds: 15
-  periodSeconds: 20
-  timeoutSeconds: 5
-  failureThreshold: 3
-
-readinessProbe:
-  httpGet:
-    path: /readyz
-    port: %d
-    scheme: HTTP
-  initialDelaySeconds: 5
-  periodSeconds: 10
-  timeoutSeconds: 3
-  successThreshold: 1
-  failureThreshold: 3
-
-startupProbe:
-  httpGet:
-    path: /healthz
-    port: %d
-    scheme: HTTP
-  failureThreshold: 30
-  periodSeconds: 10
-
-# ── Environment ───────────────────────────────────────────────────
-env: []
-envFrom: []
-
-# ── Volumes ───────────────────────────────────────────────────────
-volumes:
-  tmpDir:
-    enabled: true
-    sizeLimit: 100Mi
-
 # ── Scheduling ────────────────────────────────────────────────────
 nodeSelector: {}
 tolerations: []
@@ -348,26 +279,114 @@ topologySpreadConstraints:
         app.kubernetes.io/name: %s
     minDomains: 3
 
-# ── Network Policy ────────────────────────────────────────────────
+# ── Service configuration (transparent defaults)
+service:
+  type: ClusterIP
+  trafficDistribution: PreferSameNode
+  port: %d
+  protocol: TCP
+
+# ── Resources ────────────────────────────────────────────────────
+resources:
+  limits:
+    cpu: 500m
+    memory: 256Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# ── Probes ───────────────────────────────────────────────────────
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: http
+  failureThreshold: 30
+  periodSeconds: 10
+
+# ── Autoscaling ──────────────────────────────────────────────────
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  scaleDownStabilizationWindowSeconds: 300
+
+# ── Volumes (transparent defaults for tmp dirs used by Deployment)
+volumes:
+  tmpDir:
+    enabled: false
+    sizeLimit: 100Mi
+
+# ── Persistent Volume Claim (optional)
+# 'pvc.enabled' controls whether a PVC is created; by default we provide
+# a tmpDir-backed PVC configuration below. To provision a specific
+# storage class or request more storage, override the 'pvc.claim' fields
+# in your values.yaml or environment overlay.
+pvc:
+  enabled: false
+  # Use an existing claim instead of creating one
+  useExistingClaim: false
+  # tmpDir: when true mounts a tmp volume backed by an application PVC
+  tmpDir:
+    enabled: true
+  # Claim template (used when creating a new PVC)
+  claim:
+    accessModes:
+      - ReadWriteOnce
+    storageClassName: standard
+    resources:
+      requests:
+        storage: 1Gi
+`, name, name, port))
+
+	// Only include networkPolicy if selected
+	if res["networkpolicy"] {
+		b.WriteString(`# ── Network Policy ────────────────────────────────────────────────
 networkPolicy:
   enabled: true
+`)
+	}
 
-# ── PodDisruptionBudget ───────────────────────────────────────────
+	if res["pdb"] {
+		b.WriteString(`# ── PodDisruptionBudget ───────────────────────────────────────────
 podDisruptionBudget:
-  enabled: false
+  enabled: true
   minAvailable: 1
 
-# ── Application config (mounted as ConfigMap) ─────────────────────
+`)
+	}
+
+	if res["configmap"] {
+		b.WriteString(fmt.Sprintf(`# ── Application config (mounted as ConfigMap) ─────────────────────
 config:
   LOG_LEVEL: info
   PORT: %q
-  APP_ENV: production
-`, port, name, name, name, port, port, port, name, name, fmt.Sprintf("%d", port)))
+`, fmt.Sprintf("%d", port)))
+	}
 
 	return b.String()
 }
 
-func helmValuesDev(name, imgRepo string) string {
+func helmValuesDev(name, imgRepo string, res map[string]bool) string {
 	return fmt.Sprintf(`# ── Development overrides ────────────────────────────────────────
 replicaCount: 1
 
@@ -379,20 +398,25 @@ resources:
   limits:
     cpu: 200m
     memory: 128Mi
-    ephemeral-storage: 256Mi
+
   requests:
     cpu: 50m
     memory: 64Mi
-    ephemeral-storage: 64Mi
+
 
 autoscaling:
-  enabled: false
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
 
 topologySpreadConstraints: []
 
 affinity: {}
-
-ingress:
+`) +
+		func() string {
+			if res["ingress"] {
+				return fmt.Sprintf(`ingress:
+  enabled: true
   hosts:
     - host: %s-dev.example.com
       paths:
@@ -403,13 +427,17 @@ ingress:
       hosts:
         - %s-dev.example.com
 
-config:
+`, name, name, name)
+			}
+			return ""
+		}() +
+		fmt.Sprintf(`config:
   LOG_LEVEL: debug
   APP_ENV: development
-`, name, name, name)
+`)
 }
 
-func helmValuesStaging(name, imgRepo string) string {
+func helmValuesStaging(name, imgRepo string, res map[string]bool) string {
 	return fmt.Sprintf(`# ── Staging overrides ────────────────────────────────────────────
 replicaCount: 2
 
@@ -421,18 +449,22 @@ resources:
   limits:
     cpu: 300m
     memory: 192Mi
-    ephemeral-storage: 256Mi
+
   requests:
     cpu: 75m
     memory: 96Mi
-    ephemeral-storage: 96Mi
+
 
 autoscaling:
   enabled: true
-  minReplicas: 2
-  maxReplicas: 5
+  minReplicas: 3
+  maxReplicas: 6
 
-ingress:
+`) +
+		func() string {
+			if res["ingress"] {
+				return fmt.Sprintf(`ingress:
+  enabled: true
   hosts:
     - host: %s-staging.example.com
       paths:
@@ -443,13 +475,17 @@ ingress:
       hosts:
         - %s-staging.example.com
 
-config:
+`, name, name, name)
+			}
+			return ""
+		}() +
+		fmt.Sprintf(`config:
   LOG_LEVEL: info
   APP_ENV: staging
-`, name, name, name)
+`)
 }
 
-func helmValuesTest(name, imgRepo string) string {
+func helmValuesTest(name, imgRepo string, res map[string]bool) string {
     return fmt.Sprintf(`# ── Test overrides ─────────────────────────────────────────────—
 replicaCount: 1
 
@@ -466,9 +502,15 @@ resources:
     memory: 64Mi
 
 autoscaling:
-  enabled: false
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
 
-ingress:
+`) +
+        func() string {
+            if res["ingress"] {
+                return fmt.Sprintf(`ingress:
+  enabled: true
   hosts:
     - host: %s-test.example.com
       paths:
@@ -479,13 +521,17 @@ ingress:
       hosts:
         - %s-test.example.com
 
-config:
+`, name, name, name)
+            }
+            return ""
+        }() +
+        fmt.Sprintf(`config:
   LOG_LEVEL: debug
   APP_ENV: test
-`, name, name, name)
+`)
 }
 
-func helmValuesProd(name, imgRepo string) string {
+func helmValuesProd(name, imgRepo string, res map[string]bool) string {
 	return fmt.Sprintf(`# ── Production overrides ─────────────────────────────────────────
 replicaCount: 3
 
@@ -497,32 +543,40 @@ resources:
   limits:
     cpu: 500m
     memory: 256Mi
-    ephemeral-storage: 512Mi
+
   requests:
     cpu: 100m
     memory: 128Mi
-    ephemeral-storage: 128Mi
+
 
 autoscaling:
   enabled: true
   minReplicas: 3
-  maxReplicas: 20
+  maxReplicas: 6
 
 podDisruptionBudget:
   enabled: true
   minAvailable: 2
 
-ingress:
+`) +
+		func() string {
+			if res["ingress"] {
+				return fmt.Sprintf(`ingress:
+  enabled: true
   hosts:
     - host: %s.example.com
       paths:
         - path: /
           pathType: Prefix
 
-config:
+`, name)
+			}
+			return ""
+		}() +
+		fmt.Sprintf(`config:
   LOG_LEVEL: warn
   APP_ENV: production
-`, name)
+`)
 }
 
 // ─────────────────────────────────────────────
@@ -599,8 +653,10 @@ ServiceAccount name.
 // ─────────────────────────────────────────────
 // templates/deployment.yaml
 // ─────────────────────────────────────────────
-func helmDeployment(name string, port int, sec models.Security) string {
-	return fmt.Sprintf(`{{- /*
+func helmDeployment(name string, port int, sec models.Security, res map[string]bool) string {
+    var b strings.Builder
+
+    b.WriteString(fmt.Sprintf(`{{- /*
   Deployment — %s
   Security: CIS K8s Benchmark v1.9 + NSA Hardening + Pod Security Standards (Restricted)
   K8s 1.35+ features: in-place resource resize, sidecar containers, topology-aware routing
@@ -629,9 +685,16 @@ spec:
   template:
     metadata:
       annotations:
-        # Force pod restart when ConfigMap changes
+`, name, name, name, name))
+
+    // Only include configmap checksum if configmap is selected
+    if res["configmap"] {
+        b.WriteString(`        # Force pod restart when ConfigMap changes
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        {{- with .Values.podAnnotations }}
+`)
+    }
+
+    b.WriteString(fmt.Sprintf(`        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
@@ -644,86 +707,109 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "%s.serviceAccountName" . }}
-      automountServiceAccountToken: false
+`, name))
 
-      # Pod Security Standards: Restricted profile
+    // Only reference serviceAccount if selected
+    if res["serviceaccount"] {
+        b.WriteString(fmt.Sprintf(`      serviceAccountName: {{ include "%s.serviceAccountName" . }}
+`, name))
+    }
+
+    b.WriteString(`      automountServiceAccountToken: false
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-
       terminationGracePeriodSeconds: 60
-
-      # Spread pods across zones for HA
       {{- with .Values.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-
-      # Priority class for production workloads
-      # priorityClassName: high-priority
-
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-
           securityContext:
             {{- toYaml .Values.containerSecurityContext | nindent 12 }}
-
           ports:
             - name: http
-              containerPort: %d
-              protocol: TCP
+`)
 
-          # Config from ConfigMap
-          envFrom:
-            - configMapRef:
+    b.WriteString(fmt.Sprintf(`              containerPort: %d
+              protocol: TCP
+`, port))
+
+    // Build envFrom block based on selected resources
+    if res["configmap"] || res["secret"] {
+        b.WriteString(`          envFrom:
+`)
+        if res["configmap"] {
+            b.WriteString(fmt.Sprintf(`            - configMapRef:
                 name: {{ include "%s.fullname" . }}-config
-          {{- with .Values.envFrom }}
+`, name))
+        }
+        if res["secret"] {
+            b.WriteString(fmt.Sprintf(`            - secretRef:
+                name: {{ include "%s.fullname" . }}-secret
+`, name))
+        }
+    }
+
+    b.WriteString(`          {{- with .Values.envFrom }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
           {{- with .Values.env }}
           env:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-
-          # Health checks (required for zero-downtime deploys)
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.readinessProbe | nindent 12 }}
           startupProbe:
             {{- toYaml .Values.startupProbe | nindent 12 }}
-
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+`)
 
-          # Read-only FS: writable dirs via emptyDir
-          volumeMounts:
-            {{- if .Values.volumes.tmpDir.enabled }}
+    s := b.String()
+
+    // Add volumeMounts + volumes when PVC is selected
+    if res["pvc"] {
+        s += `          volumeMounts:
+            {{- if .Values.pvc.tmpDir.enabled }}
             - name: tmp
               mountPath: /tmp
             - name: varrun
               mountPath: /var/run
             {{- end }}
+            {{- if .Values.pvc.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+`
+    }
 
-          # Graceful shutdown
-          lifecycle:
-            preStop:
-              exec:
-                command: ["/bin/sh", "-c", "sleep 5"]
+    // append the remaining sections
 
-      volumes:
-        {{- if .Values.volumes.tmpDir.enabled }}
+    // Add volumes block when PVC is selected
+    if res["pvc"] {
+        s += fmt.Sprintf(`      volumes:
+        {{- if .Values.pvc.tmpDir.enabled }}
         - name: tmp
           emptyDir:
-            sizeLimit: {{ .Values.volumes.tmpDir.sizeLimit }}
+            sizeLimit: 100Mi
         - name: varrun
           emptyDir:
             sizeLimit: 10Mi
         {{- end }}
+        {{- if .Values.pvc.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "%s.fullname" . }}-data
+        {{- end }}
+`, name)
+    }
 
-      {{- with .Values.nodeSelector }}
+    s += `      {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}
@@ -735,9 +821,10 @@ spec:
       tolerations:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-`, name, name, name, name, name, name, port, name)
-}
+`
 
+    return s
+}
 func helmService(name string) string {
 	return fmt.Sprintf(`apiVersion: v1
 kind: Service
@@ -747,13 +834,12 @@ metadata:
   labels:
     {{- include "%s.labels" . | nindent 4 }}
 spec:
-  type: {{ .Values.service.type }}
-  # Topology-aware routing — prefers same-zone endpoints (K8s 1.27+ stable)
-  trafficDistribution: {{ .Values.service.trafficDistribution }}
+  type: {{ default "ClusterIP" .Values.service.type }}
+  trafficDistribution: {{ default "PreferSameNode" .Values.service.trafficDistribution }}
   ports:
-    - port: {{ .Values.service.port }}
+    - port: {{ default 80 .Values.service.port }}
       targetPort: http
-      protocol: {{ .Values.service.protocol }}
+      protocol: {{ default "TCP" .Values.service.protocol }}
       name: http
   selector:
     {{- include "%s.selectorLabels" . | nindent 4 }}
@@ -812,7 +898,7 @@ spec:
               service:
                 name: {{ include "%s.fullname" $ }}
                 port:
-                  number: {{ $.Values.service.port }}
+                  number: {{ default 80 $.Values.service.port }}
           {{- end }}
     {{- end }}
 {{- end }}
@@ -836,8 +922,7 @@ data:
 }
 
 func helmHPA(name string) string {
-	return fmt.Sprintf(`{{- if .Values.autoscaling.enabled }}
-# HPA v2 — stable since K8s 1.25
+	return fmt.Sprintf(`# HPA v2 — always enabled (disabled via minReplicaCount with KEDA)
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
@@ -890,7 +975,6 @@ spec:
           value: 4
           periodSeconds: 30
       selectPolicy: Max
-{{- end }}
 `, name, name, name)
 }
 
@@ -1053,8 +1137,7 @@ spec:
 }
 
 func helmPDB(name string) string {
-	return fmt.Sprintf(`{{- if .Values.podDisruptionBudget.enabled }}
-# PodDisruptionBudget — ensures availability during voluntary disruptions
+	return fmt.Sprintf(`# PodDisruptionBudget — ensures availability during voluntary disruptions
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -1068,20 +1151,20 @@ spec:
     matchLabels:
       {{- include "%s.selectorLabels" . | nindent 6 }}
   # unhealthyPodEvictionPolicy: AlwaysAllow  # K8s 1.27+ - evict unhealthy pods first
-{{- end }}
 `, name, name, name)
 }
 
-func helmCronJob(name, image string, sec models.Security) string {
-	roVal := "false"
-	if sec.ReadOnly {
-		roVal = "true"
-	}
-	privEsc := "true"
-	if sec.NoPrivEsc {
-		privEsc = "false"
-	}
-	return fmt.Sprintf(`apiVersion: batch/v1
+func helmCronJob(name, image string, sec models.Security, res map[string]bool) string {
+    roVal := "false"
+    if sec.ReadOnly {
+        roVal = "true"
+    }
+    privEsc := "true"
+    if sec.NoPrivEsc {
+        privEsc = "false"
+    }
+
+    s := fmt.Sprintf(`apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: {{ include "%s.fullname" . }}-job
@@ -1133,24 +1216,23 @@ spec:
                 limits:
                   cpu: 200m
                   memory: 128Mi
-                  ephemeral-storage: 256Mi
+              
                 requests:
                   cpu: 50m
                   memory: 64Mi
-                  ephemeral-storage: 64Mi
-              volumeMounts:
-                - name: tmp
-                  mountPath: /tmp
-          volumes:
-            - name: tmp
-              emptyDir:
-                sizeLimit: 100Mi
-`, name, name, name, name,
-		boolStr(sec.NonRoot), roVal, privEsc)
+              
+`, name, name, name, name, boolStr(sec.NonRoot), roVal, privEsc)
+
+    // remove tmp mount/volume when PVC not selected
+    if !res["pvc"] {
+        s = strings.Replace(s, "              volumeMounts:\n                - name: tmp\n                  mountPath: /tmp\n          volumes:\n            - name: tmp\n              emptyDir:\n                sizeLimit: 100Mi\n", "", 1)
+    }
+
+    return s
 }
 
 func helmSecretPlaceholder(name string) string {
-	return fmt.Sprintf(`# ⚠️  Do NOT store plaintext secrets here.
+    return fmt.Sprintf(`# ⚠️  Do NOT store plaintext secrets here.
 # Use External Secrets Operator or HashiCorp Vault Agent Injector.
 # This file is a reference structure only.
 #
@@ -1177,7 +1259,15 @@ data: {}
 func helmExternalSecret(name string, opts models.SecretOpts) string {
 	storeName := opts.ESSecretStoreName
 	if storeName == "" {
-		storeName = "vault-backend"
+		if opts.ESBackendProvider == "aws" && opts.ESAWSService == "ParameterStore" {
+			storeName = "aws-parameterstore"
+		} else {
+			defaults := map[string]string{"aws": "aws-secretsmanager", "gcp": "gcp-secretmanager", "azure": "azure-keyvault", "vault": "vault-backend"}
+			storeName = defaults[opts.ESBackendProvider]
+			if storeName == "" {
+				storeName = "aws-secretsmanager"
+			}
+		}
 	}
 	storeKind := opts.ESSecretStoreKind
 	if storeKind == "" {
@@ -1185,7 +1275,20 @@ func helmExternalSecret(name string, opts models.SecretOpts) string {
 	}
 	remotePath := opts.ESRemotePath
 	if remotePath == "" {
-		remotePath = fmt.Sprintf("secret/data/%s", name)
+		switch opts.ESBackendProvider {
+		case "gcp":
+			remotePath = fmt.Sprintf("projects/-/secrets/%s", name)
+		case "azure":
+			remotePath = name
+		case "vault":
+			remotePath = fmt.Sprintf("secret/data/%s", name)
+		default: // aws
+			if opts.ESAWSService == "ParameterStore" {
+				remotePath = fmt.Sprintf("/%s/secrets", name)
+			} else {
+				remotePath = fmt.Sprintf("%s/secrets", name)
+			}
+		}
 	}
 	return fmt.Sprintf(`# ExternalSecret — application-scoped secret sync
 # Requires: External Secrets Operator (https://external-secrets.io)
@@ -1242,11 +1345,89 @@ spec:
 func helmSecretStore(name string, opts models.SecretOpts) string {
 	storeName := opts.ESSecretStoreName
 	if storeName == "" {
-		storeName = "vault-backend"
+		if opts.ESBackendProvider == "aws" && opts.ESAWSService == "ParameterStore" {
+			storeName = "aws-parameterstore"
+		} else {
+			defaults := map[string]string{"aws": "aws-secretsmanager", "gcp": "gcp-secretmanager", "azure": "azure-keyvault", "vault": "vault-backend"}
+			storeName = defaults[opts.ESBackendProvider]
+			if storeName == "" {
+				storeName = "aws-secretsmanager"
+			}
+		}
 	}
+
+	var providerBlock string
+	switch opts.ESBackendProvider {
+	case "gcp":
+		projectID := opts.ESGCPProjectID
+		if projectID == "" {
+			projectID = "my-gcp-project"
+		}
+		providerBlock = fmt.Sprintf(`    gcpsm:
+      projectID: %s
+      auth:
+        workloadIdentity:
+          clusterLocation: us-central1
+          clusterName: my-cluster
+          serviceAccountRef:
+            name: {{ include "%s.serviceAccountName" . }}
+`, projectID, name)
+	case "azure":
+		vaultURL := opts.ESAzureVaultURL
+		if vaultURL == "" {
+			vaultURL = "https://my-keyvault.vault.azure.net"
+		}
+		providerBlock = fmt.Sprintf(`    azurekv:
+      vaultUrl: %s
+      authType: WorkloadIdentity
+      serviceAccountRef:
+        name: {{ include "%s.serviceAccountName" . }}
+`, vaultURL, name)
+	case "vault":
+		server := opts.ESVaultServer
+		if server == "" {
+			server = "https://vault.example.com"
+		}
+		vaultPath := opts.ESVaultPath
+		if vaultPath == "" {
+			vaultPath = "secret"
+		}
+		role := opts.ESVaultRole
+		if role == "" {
+			role = name
+		}
+		providerBlock = fmt.Sprintf(`    vault:
+      server: %q
+      path: %q
+      version: "v2"
+      auth:
+        kubernetes:
+          mountPath: "kubernetes"
+          role: %q
+          serviceAccountRef:
+            name: {{ include "%s.serviceAccountName" . }}
+`, server, vaultPath, role, name)
+	default: // "aws"
+		region := opts.ESAWSRegion
+		if region == "" {
+			region = "us-east-1"
+		}
+		service := opts.ESAWSService
+		if service == "" {
+			service = "SecretsManager"
+		}
+		providerBlock = fmt.Sprintf(`    aws:
+      service: %s
+      region: %s
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: {{ include "%s.serviceAccountName" . }}
+`, service, region, name)
+	}
+
 	return fmt.Sprintf(`# SecretStore — application-namespace scoped provider configuration
 # For cross-namespace sharing use ClusterSecretStore instead.
-# This only configures HOW to connect — no cluster-bootstrap credentials here.
 apiVersion: external-secrets.io/v1beta1
 kind: SecretStore
 metadata:
@@ -1256,38 +1437,7 @@ metadata:
     {{- include "%s.labels" . | nindent 4 }}
 spec:
   provider:
-    # ── HashiCorp Vault example ───────────────────────────────────
-    vault:
-      server: "https://vault.example.com"
-      path: "secret"
-      version: "v2"
-      auth:
-        # Use Kubernetes ServiceAccount for authentication (recommended)
-        kubernetes:
-          mountPath: "kubernetes"
-          role: "%s"
-          serviceAccountRef:
-            name: {{ include "%s.serviceAccountName" . }}
-
-    # ── AWS Secrets Manager example (uncomment to use) ────────────
-    # aws:
-    #   service: SecretsManager
-    #   region: eu-west-1
-    #   auth:
-    #     jwt:
-    #       serviceAccountRef:
-    #         name: {{ include "%s.serviceAccountName" . }}
-
-    # ── GCP Secret Manager example (uncomment to use) ─────────────
-    # gcpsm:
-    #   projectID: my-gcp-project
-    #   auth:
-    #     workloadIdentity:
-    #       clusterLocation: europe-west1
-    #       clusterName: my-cluster
-    #       serviceAccountRef:
-    #         name: {{ include "%s.serviceAccountName" . }}
-`, storeName, name, name, name, name, name)
+%s`, storeName, name, providerBlock)
 }
 
 // ─────────────────────────────────────────────
@@ -1682,7 +1832,7 @@ Version     : {{ .Chart.AppVersion }}
 URL: https://{{ (first .Values.ingress.hosts).host }}/
 {{- else }}
 Port-forward (local):
-  kubectl port-forward svc/{{ include "%s.fullname" . }} 8080:{{ .Values.service.port }} -n {{ .Release.Namespace }}
+  kubectl port-forward svc/{{ include "%s.fullname" . }} 8080:{{ default 80 .Values.service.port }} -n {{ .Release.Namespace }}
 {{- end }}
 
 QUICK COMMANDS

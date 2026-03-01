@@ -52,11 +52,24 @@ type KedaOpts struct {
 
 type SecretOpts struct {
 	Provider string `json:"provider"` // "none"|"external-secrets"|"vault"
-	// External Secrets
+	// External Secrets — common
+	ESBackendProvider string `json:"esBackendProvider"` // "aws"|"gcp"|"azure"|"vault"
 	ESSecretStoreName string `json:"esSecretStoreName"`
 	ESSecretStoreKind string `json:"esSecretStoreKind"` // "SecretStore"|"ClusterSecretStore"
 	ESRemotePath      string `json:"esRemotePath"`
-	// Vault
+	// ESO — AWS
+	ESAWSService string `json:"esAwsService"` // "SecretsManager"|"ParameterStore"
+	ESAWSRegion  string `json:"esAwsRegion"`
+	ESAWSRoleARN string `json:"esAwsRoleArn"`
+	// ESO — GCP
+	ESGCPProjectID string `json:"esGcpProjectId"`
+	// ESO — Azure
+	ESAzureVaultURL string `json:"esAzureVaultUrl"`
+	// ESO — Vault
+	ESVaultServer string `json:"esVaultServer"`
+	ESVaultPath   string `json:"esVaultPath"`
+	ESVaultRole   string `json:"esVaultRole"`
+	// Vault (VSO — standalone)
 	VaultAddress   string `json:"vaultAddress"`
 	VaultRole      string `json:"vaultRole"`
 	VaultPath      string `json:"vaultPath"`

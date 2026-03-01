@@ -29,8 +29,26 @@ function updateKedaTrigger(val) {
 // ── Secret provider toggle ─────────────────────────────
 function updateSecretProvider(val) {
   document.querySelectorAll('.secret-opts').forEach(el => el.classList.add('hidden'));
-  if (val === 'external-secrets') document.getElementById('eso-opts').classList.remove('hidden');
+  if (val === 'external-secrets') {
+    document.getElementById('eso-opts').classList.remove('hidden');
+    updateESOBackend(document.getElementById('es-backend-provider').value);
+  }
   if (val === 'vault') document.getElementById('vault-opts').classList.remove('hidden');
+}
+
+// ── ESO backend provider toggle ────────────────────────
+function updateESOBackend(val) {
+  document.querySelectorAll('.eso-backend-fields').forEach(el => el.classList.add('hidden'));
+  const el = document.getElementById('eso-' + val);
+  if (el) el.classList.remove('hidden');
+
+  // Update store name placeholder based on provider
+  const storeNameEl = document.getElementById('es-store-name');
+  if (storeNameEl) {
+    const defaults = { aws: 'aws-secretsmanager', gcp: 'gcp-secretmanager', azure: 'azure-keyvault', vault: 'vault-backend' };
+    storeNameEl.placeholder = defaults[val] || 'my-secret-store';
+    if (!storeNameEl.value) storeNameEl.value = '';
+  }
 }
 // ── Istio toggle ───────────────────────────────────
 function toggleIstio(enabled) {
@@ -91,9 +109,18 @@ function collectRequest() {
     },
     secrets: {
       provider: secretProvider,
+      esBackendProvider: document.getElementById('es-backend-provider')?.value || 'aws',
+      esAwsService: document.getElementById('eso-aws-service')?.value || 'SecretsManager',
       esSecretStoreName: v('es-store-name'),
       esSecretStoreKind: document.getElementById('es-store-kind')?.value || 'SecretStore',
       esRemotePath: v('es-remote-path'),
+      esAwsRegion: v('eso-aws-region'),
+      esAwsRoleArn: v('eso-aws-role-arn'),
+      esGcpProjectId: v('eso-gcp-project'),
+      esAzureVaultUrl: v('eso-azure-vault-url'),
+      esVaultServer: v('eso-vault-server'),
+      esVaultPath: v('eso-vault-path'),
+      esVaultRole: v('eso-vault-role'),
       vaultAddress: v('vault-addr'),
       vaultRole: v('vault-role'),
       vaultPath: v('vault-path'),
@@ -146,7 +173,7 @@ async function generate() {
     showToast('✗ ' + err.message, true);
   } finally {
     btn.disabled = false;
-    btn.innerHTML = '<span class="btn-icon">⚡</span> Generate Blueprint';
+    btn.innerHTML = 'Generate Blueprint';
   }
 }
 
@@ -223,15 +250,10 @@ function makeFileEl(name, idx, depth) {
     : ext === 'txt' ? 'txt'
     : 'ignore';
 
-  const icon = ext === 'yaml' || ext === 'yml' ? '📄'
-    : ext === 'tpl' ? '🔧'
-    : ext === 'md' ? '📝'
-    : '📋';
-
   const el = document.createElement('div');
   el.className = `tree-file ${cls}`;
   el.dataset.idx = idx;
-  el.innerHTML = `<span class="ti" style="margin-left:${depth * 14}px">${icon}</span><span>${name}</span>`;
+  el.innerHTML = `<span class="ti" style="margin-left:${depth * 14}px"></span><span>${name}</span>`;
   el.onclick = () => selectFile(idx);
   return el;
 }

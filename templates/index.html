@@ -13,14 +13,13 @@
 
 <header class="app-header">
   <div class="header-logo">
-    <div class="logo-mark">K8</div>
+    <div class="logo-mark">K8s</div>
     <div class="logo-info">
       <div class="logo-name">KubeBlueprint</div>
       <div class="logo-tagline">Kubernetes · Helm · Kustomize</div>
     </div>
   </div>
   <div class="header-badges">
-    <span class="hbadge green">● K8s 1.35+</span>
     <span class="hbadge">CIS Hardened</span>
     <span class="hbadge">PSS Restricted</span>
   </div>
@@ -36,12 +35,12 @@
       <div class="section-label">Package Type</div>
       <div class="mode-row">
         <button class="mode-card active" id="btn-helm" data-mode="helm" onclick="setMode('helm')">
-          <span class="mode-icon">⎈</span>
+          <!-- <span class="mode-icon">⎈</span> -->
           <span class="mode-name">Helm</span>
           <span class="mode-sub">Chart + values</span>
         </button>
         <button class="mode-card" id="btn-kustomize" data-mode="kustomize" onclick="setMode('kustomize')">
-          <span class="mode-icon">⎎</span>
+          <!-- <span class="mode-icon">⎎</span> -->
           <span class="mode-name">Kustomize</span>
           <span class="mode-sub">Base + overlays</span>
         </button>
@@ -69,19 +68,19 @@
     <div class="section">
       <div class="section-label">Manifest Resources</div>
       <div class="chips">
-        <label class="chip"><input type="checkbox" value="deployment" checked disabled><span class="chip-inner">🚀 Deployment</span></label>
-        <label class="chip"><input type="checkbox" value="service" checked><span class="chip-inner">🔗 Service</span></label>
-        <label class="chip"><input type="checkbox" value="ingress"><span class="chip-inner">🌐 Ingress</span></label>
-        <label class="chip"><input type="checkbox" value="configmap" checked><span class="chip-inner">⚙️ ConfigMap</span></label>
-        <label class="chip"><input type="checkbox" value="serviceaccount" checked><span class="chip-inner">🔑 ServiceAccount</span></label>
-        <label class="chip"><input type="checkbox" value="hpa" checked><span class="chip-inner">📈 HPA</span></label>
-      <label class="chip"><input type="checkbox" value="vpa"><span class="chip-inner">⚖️ VPA</span></label>
-        <label class="chip"><input type="checkbox" value="networkpolicy"><span class="chip-inner">🛡️ NetworkPolicy</span></label>
-        <label class="chip"><input type="checkbox" value="rbac"><span class="chip-inner">🎫 RBAC</span></label>
-        <label class="chip"><input type="checkbox" value="secret"><span class="chip-inner">🔒 Secret</span></label>
-        <label class="chip"><input type="checkbox" value="pvc"><span class="chip-inner">💾 PVC</span></label>
-        <label class="chip"><input type="checkbox" value="cronjob"><span class="chip-inner">🕐 CronJob</span></label>
-        <label class="chip"><input type="checkbox" value="poddisruptionbudget" checked><span class="chip-inner">⚖️ PDB</span></label>
+        <label class="chip"><input type="checkbox" value="deployment" checked disabled><span class="chip-inner">Deployment</span></label>
+        <label class="chip"><input type="checkbox" value="service" checked><span class="chip-inner">Service</span></label>
+        <label class="chip"><input type="checkbox" value="ingress"><span class="chip-inner">Ingress</span></label>
+        <label class="chip"><input type="checkbox" value="configmap" checked><span class="chip-inner">ConfigMap</span></label>
+        <label class="chip"><input type="checkbox" value="serviceaccount" checked><span class="chip-inner">ServiceAccount</span></label>
+        <label class="chip"><input type="checkbox" value="hpa" checked><span class="chip-inner">HPA</span></label>
+      <label class="chip"><input type="checkbox" value="vpa"><span class="chip-inner">VPA</span></label>
+        <label class="chip"><input type="checkbox" value="networkpolicy"><span class="chip-inner">NetworkPolicy</span></label>
+        <label class="chip"><input type="checkbox" value="rbac"><span class="chip-inner">RBAC</span></label>
+        <label class="chip"><input type="checkbox" value="secret"><span class="chip-inner">Secret</span></label>
+        <label class="chip"><input type="checkbox" value="pvc"><span class="chip-inner">PVC</span></label>
+        <label class="chip"><input type="checkbox" value="cronjob"><span class="chip-inner">CronJob</span></label>
+        <label class="chip"><input type="checkbox" value="poddisruptionbudget" checked><span class="chip-inner">PDB</span></label>
       </div>
     </div>
 
@@ -101,27 +100,27 @@
       <div class="section-label">Security Controls</div>
       <div class="toggles">
         <div class="toggle-row">
-          <span class="toggle-label">🚫 Non-root (UID 65534)</span>
+          <span class="toggle-label">Non-root (UID 65534)</span>
           <label class="toggle"><input type="checkbox" id="sec-nonroot" checked><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">📖 Read-only filesystem</span>
+          <span class="toggle-label">Read-only filesystem</span>
           <label class="toggle"><input type="checkbox" id="sec-readonly" checked><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">🔐 Drop ALL capabilities</span>
+          <span class="toggle-label">Drop ALL capabilities</span>
           <label class="toggle"><input type="checkbox" id="sec-caps" checked><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">🔍 Seccomp RuntimeDefault</span>
+          <span class="toggle-label">Seccomp RuntimeDefault</span>
           <label class="toggle"><input type="checkbox" id="sec-seccomp" checked><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">⛔ No privilege escalation</span>
+          <span class="toggle-label">No privilege escalation</span>
           <label class="toggle"><input type="checkbox" id="sec-privesc" checked><span class="track"><span class="thumb"></span></span></label>
         </div>
         <div class="toggle-row">
-          <span class="toggle-label">🌐 NetworkPolicy deny-all</span>
+          <span class="toggle-label">NetworkPolicy deny-all</span>
           <label class="toggle"><input type="checkbox" id="sec-netpol" checked><span class="track"><span class="thumb"></span></span></label>
         </div>
       </div>
@@ -196,7 +195,36 @@
         </select>
       </div>
       <div id="eso-opts" class="secret-opts hidden">
-        <div class="field"><label class="field-label">SecretStore Name</label><input class="input" id="es-store-name" placeholder="vault-backend" value="vault-backend"></div>
+        <div class="field"><label class="field-label">Backend Provider</label>
+          <select class="input" id="es-backend-provider" onchange="updateESOBackend(this.value)">
+            <option value="aws">AWS Secrets Manager</option>
+            <option value="gcp">GCP Secret Manager</option>
+            <option value="azure">Azure Key Vault</option>
+            <option value="vault">HashiCorp Vault</option>
+          </select>
+        </div>
+        <div id="eso-aws" class="eso-backend-fields">
+          <div class="field"><label class="field-label">AWS Service</label>
+            <select class="input" id="eso-aws-service">
+              <option value="SecretsManager">Secrets Manager</option>
+              <option value="ParameterStore">Parameter Store (SSM)</option>
+            </select>
+          </div>
+          <div class="field"><label class="field-label">AWS Region</label><input class="input" id="eso-aws-region" placeholder="us-east-1" value="us-east-1"></div>
+          <div class="field"><label class="field-label">IAM Role ARN (IRSA)</label><input class="input" id="eso-aws-role-arn" placeholder="arn:aws:iam::123456789:role/my-app-role"></div>
+        </div>
+        <div id="eso-gcp" class="eso-backend-fields hidden">
+          <div class="field"><label class="field-label">GCP Project ID</label><input class="input" id="eso-gcp-project" placeholder="my-gcp-project"></div>
+        </div>
+        <div id="eso-azure" class="eso-backend-fields hidden">
+          <div class="field"><label class="field-label">Azure Key Vault URL</label><input class="input" id="eso-azure-vault-url" placeholder="https://my-keyvault.vault.azure.net"></div>
+        </div>
+        <div id="eso-vault" class="eso-backend-fields hidden">
+          <div class="field"><label class="field-label">Vault Server</label><input class="input" id="eso-vault-server" placeholder="https://vault.example.com" value="https://vault.example.com"></div>
+          <div class="field"><label class="field-label">Vault Path</label><input class="input" id="eso-vault-path" placeholder="secret" value="secret"></div>
+          <div class="field"><label class="field-label">Vault Role</label><input class="input" id="eso-vault-role" placeholder="my-app"></div>
+        </div>
+        <div class="field"><label class="field-label">SecretStore Name</label><input class="input" id="es-store-name" placeholder="aws-secrets-manager" value="aws-secrets-manager"></div>
         <div class="field"><label class="field-label">Store Kind</label>
           <select class="input" id="es-store-kind">
             <option value="SecretStore">SecretStore (namespace)</option>
@@ -266,7 +294,7 @@
     <!-- Generate -->
     <div class="section">
       <button class="btn-generate" id="generate-btn" onclick="generate()">
-        <span class="btn-icon">⚡</span> Generate Blueprint
+        Generate Blueprint
       </button>
     </div>
 
@@ -281,13 +309,12 @@
         <div class="ph-ring ph-ring-1"></div>
         <div class="ph-ring ph-ring-2"></div>
         <div class="ph-ring ph-ring-3"></div>
-        <div class="ph-icon">⎈</div>
       </div>
       <div class="ph-title">Configure &amp; Generate</div>
       <div class="ph-desc">Select your package type, resources, environments<br>and security options, then click Generate Blueprint.</div>
       <div class="ph-features">
-        <span class="ph-feat">✓ K8s 1.35+ Best Practices</span>
-        <span class="ph-feat">✓ Pod Security Standards</span>
+        <span class="ph-feat">K8s 1.35+ Best Practices</span>
+        <span class="ph-feat">Pod Security Standards</span>
         <span class="ph-feat">✓ CIS Benchmark v1.9</span>
         <span class="ph-feat">✓ KEDA · ESO · Vault · Istio</span>
       </div>

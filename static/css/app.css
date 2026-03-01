@@ -136,7 +136,7 @@ body{
 .mode-card.active{border-color:var(--accent);background:rgba(0,212,255,.06)}
 .mode-card[data-mode="kustomize"].active{border-color:var(--purple);background:rgba(167,139,250,.06)}
 
-.mode-icon{font-size:20px}
+
 .mode-name{font-size:13px;font-weight:700;color:var(--text)}
 .mode-sub{font-size:10px;font-family:var(--font-mono);color:var(--text3)}
 
@@ -268,7 +268,7 @@ select.input{cursor:pointer}
 
 /* ── KEDA / SECRET opts ──────────────────────── */
 .keda-opts,.secret-opts{margin-top:10px;display:flex;flex-direction:column;gap:8px}
-.trigger-fields{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.trigger-fields,.eso-backend-fields{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .hidden{display:none!important}
 
 /* ── GENERATE BUTTON ─────────────────────────── */
@@ -285,7 +285,7 @@ select.input{cursor:pointer}
 .btn-generate:hover{transform:translateY(-2px);box-shadow:0 8px 20px rgba(0,212,255,.25)}
 .btn-generate:active{transform:translateY(0)}
 .btn-generate:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.btn-icon{font-size:16px}
+
 
 /* ── MAIN OUTPUT ─────────────────────────────── */
 .main-output{
@@ -320,7 +320,7 @@ select.input{cursor:pointer}
 .ph-ring-1{width:100%;height:100%;border-color:rgba(0,212,255,.12);animation-duration:12s}
 .ph-ring-2{width:72%;height:72%;border-color:rgba(167,139,250,.14);animation-duration:8s;animation-direction:reverse}
 .ph-ring-3{width:44%;height:44%;border-color:rgba(0,212,255,.2);animation-duration:5s}
-.ph-icon{font-size:32px;z-index:1;color:var(--text3)}
+
 
 @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
